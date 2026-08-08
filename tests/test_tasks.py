@@ -48,6 +48,14 @@ def test_discover_ignores_files_and_dirs_without_start(tmp_path):
     assert names == ["good"]
 
 
+def test_discover_tasks_returns_absolute_paths(tmp_path, monkeypatch):
+    _mk_task(tmp_path, "job")
+    monkeypatch.chdir(tmp_path)
+    tasks = discover_tasks(".")
+    assert tasks[0].task_dir.is_absolute()
+    assert tasks[0].task_dir == (tmp_path / "tasks" / "job").resolve()
+
+
 def test_discover_invalid_cron_toml_then_name_default(tmp_path):
     _mk_task(tmp_path, "a", with_cron=False)
     tasks = discover_tasks(tmp_path)

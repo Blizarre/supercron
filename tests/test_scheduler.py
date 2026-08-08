@@ -62,6 +62,20 @@ def add_task(tasks_dir: Path, name: str, schedule=None):
     (task_dir / "cron.toml").write_text(cron)
 
 
+def test_daemon_resolves_relative_cron_dir(tmp_path, monkeypatch):
+    add_task(tmp_path / "tasks", "t")
+    # Create a minimal config so read_config() succeeds.
+    (tmp_path / "config.toml").write_text('image = "busybox:latest"\n')
+    monkeypatch.chdir(tmp_path)
+    daemon = Daemon(".")
+    assert daemon.cron_dir == tmp_path.resolve()
+    assert daemon.config.results_path == (tmp_path / "results").resolve()
+    daemon.refresh()
+    task = daemon.task_by_name("t")
+    assert task is not None
+    assert task.task_dir.is_absolute()
+
+
 def test_daemon_refresh_compiles_schedule(tmp_path):
     daemon, tasks_dir, _runner = build(tmp_path)
     add_task(tasks_dir, "t", schedule="*/5 * * * *")

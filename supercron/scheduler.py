@@ -49,7 +49,7 @@ class Daemon:
         runner: DockerRunner | None = None,
         callbacks: CallbackSender | None = None,
     ):
-        self.cron_dir = Path(cron_dir)
+        self.cron_dir = Path(cron_dir).resolve()
         self.config = config or read_config(self.cron_dir)
         self.store = store or ResultsStore(self.config.results_path)
         self.runner = runner or DockerRunner(self.config)

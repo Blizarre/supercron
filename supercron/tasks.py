@@ -51,8 +51,12 @@ def _parse_cron_toml(path: Path, task: Task) -> None:
 
 
 def discover_tasks(cron_dir: str | Path, tasks_dir: str = "tasks") -> list[Task]:
-    """Scan cron/tasks/*/ for valid tasks (each must contain start.sh)."""
-    base = Path(cron_dir) / tasks_dir
+    """Scan cron/tasks/*/ for valid tasks (each must contain start.sh).
+
+    The task directories are resolved to absolute paths so they can be used
+    as Docker volume mounts.
+    """
+    base = (Path(cron_dir) / tasks_dir).resolve()
     tasks: list[Task] = []
     if not base.is_dir():
         return tasks
