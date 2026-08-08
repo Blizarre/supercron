@@ -65,7 +65,7 @@ def load_config(cron_dir: str | Path, data: dict[str, Any]) -> RootConfig:
 def read_config(cron_dir: str | Path) -> RootConfig:
     """Read cron/config.toml and return a RootConfig."""
     cron_dir = Path(cron_dir)
-    path = cron_dir / "config.toml"
+    path = (cron_dir / "config.toml").resolve()
     if not path.exists():
         raise ConfigError(f"missing config.toml at {path}")
     try:

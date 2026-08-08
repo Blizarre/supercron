@@ -1,0 +1,16 @@
+# supercron config.toml
+#
+# Copy this file to your cron root (e.g. /cron/config.toml) and adjust.
+# All keys are optional; the values below show the defaults.
+
+image       = "python:3.12"   # Docker image used to create task containers
+mount_path  = "/work"         # path the task directory is mounted to in the container
+tasks_dir   = "tasks"         # subdirectory under the cron root containing tasks
+results_dir = "results"       # subdirectory under the cron root for records/logs
+
+timeout    = 300              # default per-run timeout in seconds (per-task cron.toml overrides)
+kill_grace = 15               # SIGTERM -> SIGKILL grace period when stopping a container
+
+[retention]
+max_executions = 100          # max records kept per task; null disables the count limit
+max_age_days   = 30           # max age of kept records; null disables the age limit
