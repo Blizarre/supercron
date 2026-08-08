@@ -30,6 +30,10 @@ class ScheduledTask:
         return self.schedule.next_after(base)
 
 
+class TaskNotFound(Exception):
+    """Raised when an action references a task that does not exist."""
+
+
 class Daemon:
     """Owns the scheduling loop and execution dispatch for tasks."""
 
@@ -82,6 +86,30 @@ class Daemon:
 
     def task_by_name(self, name: str) -> Task | None:
         return self._tasks.get(name)
+
+    def trigger_task(self, name: str) -> None:
+        """Start a manual run of ``name`` in a background thread.
+
+        Raises :class:`TaskNotFound` if no such task exists. The run
+        completes asynchronously, so callers should poll for status.
+        """
+        task = self._task_or_raise(name)
+        Thread(target=self.run_task, args=(task, "manual"), daemon=True).start()
+
+    def reset_task(self, name: str) -> None:
+        """Destroy and recreate the persistent container for ``name``.
+
+        Raises :class:`TaskNotFound` if no such task exists.
+        """
+        task = self._task_or_raise(name)
+        self.runner.destroy(task)
+        self.runner.ensure_container(task)
+
+    def _task_or_raise(self, name: str) -> Task:
+        task = self._tasks.get(name)
+        if task is None:
+            raise TaskNotFound(f"no task named {name!r}")
+        return task
 
     def running_records(self) -> dict[str, ExecutionRecord]:
         return dict(self._running)

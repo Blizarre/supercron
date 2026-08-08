@@ -71,5 +71,12 @@ disallow_incomplete_defs = false
 disallow_untyped_calls = false
 disable_error_code = ["arg-type", "assignment"]
 
+[[tool.mypy.overrides]]
+module = "test_server"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+disable_error_code = ["arg-type", "assignment", "attr-defined"]
+
 
 

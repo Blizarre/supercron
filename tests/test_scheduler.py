@@ -7,7 +7,7 @@ from supercron.config import load_config
 from supercron.cron import CronError, CronSchedule
 from supercron.records import ExecutionRecord, ResultsStore
 from supercron.runner import DockerError, ExecutionResult
-from supercron.scheduler import Daemon
+from supercron.scheduler import Daemon, TaskNotFound
 
 
 class FakeRunner:
@@ -94,6 +94,20 @@ def test_run_task_marks_failure_on_runner_error(tmp_path):
     rec = daemon.run_task(daemon.task_by_name("t"), trigger="manual")
     assert rec.status == "failure"
     assert rec.return_code is None
+
+
+def test_trigger_task_unknown_raises(tmp_path):
+    daemon, _tasks_dir, _runner = build(tmp_path)
+    daemon.refresh()
+    with pytest.raises(TaskNotFound):
+        daemon.trigger_task("missing")
+
+
+def test_reset_task_unknown_raises(tmp_path):
+    daemon, _tasks_dir, _runner = build(tmp_path)
+    daemon.refresh()
+    with pytest.raises(TaskNotFound):
+        daemon.reset_task("missing")
 
 
 def test_dispatch_runs_due_scheduled_tasks(tmp_path):

@@ -35,11 +35,12 @@ tested; run `make check` before committing.
 - [x] Standard JSON payload: task, id, status, return code, timestamps
 - [x] Best-effort send with timeout; log failures (no retries)
 
-## Phase 5 — Web UI + server
-- [ ] Serve history, status, and post-run logs per task
-- [ ] Manual run trigger
-- [ ] Container reset button
-- [ ] Poll-based refresh (no live-tail)
+## Phase 5 — Web UI + server — DONE
+- [x] Serve history, status, and post-run logs per task
+      (`supercron/server.py`)
+- [x] Manual run trigger
+- [x] Container reset button
+- [x] Poll-based refresh (no live-tail)
 
 ## Phase 6 — Ops & polish
 - [ ] Retention/pruning of `results/` (count/age) from `config.toml`
