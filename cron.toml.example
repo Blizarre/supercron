@@ -1,0 +1,14 @@
+# supercron task cron.toml
+#
+# Copy this file to <cron>/tasks/<task>/cron.toml and adjust. Every key is
+# optional; the defaults shown are what you get when the key is omitted.
+# Without a schedule the task is only runnable manually from the UI.
+
+title = "My task"      # human-readable name shown in the web UI (default: task dir name)
+schedule = "*/5 * * * *"   # 5-field cron expression; omit for manual-only
+timeout = 60            # per-run timeout in seconds (default: value in config.toml)
+
+[callbacks]             # optional URLs POSTed at the matching lifecycle event
+start       = "https://monitoring.example/start"
+end_success = "https://monitoring.example/ok"
+end_failure = "https://monitoring.example/fail"
