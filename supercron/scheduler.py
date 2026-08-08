@@ -7,6 +7,7 @@ for manual/manual-trigger runs.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,6 +20,8 @@ from .cron import CronError, CronSchedule
 from .records import ExecutionRecord, ResultsStore
 from .runner import DockerRunner
 from .tasks import Task, discover_tasks, utcnow
+
+log = logging.getLogger("supercron.scheduler")
 
 
 @dataclass
@@ -77,6 +80,14 @@ class Daemon:
                 except CronError as exc:
                     raise CronError(f"task {task.name!r}: {exc}") from exc
         self._scheduled = scheduled
+        log.info("discovered %d task(s)", len(tasks))
+        for task in tasks:
+            log.info(
+                "  %-25s schedule=%-18s timeout=%s",
+                task.name,
+                task.schedule or "-",
+                task.timeout or self.config.timeout,
+            )
 
     def tasks(self) -> list[Task]:
         return list(self._tasks.values())
@@ -127,6 +138,13 @@ class Daemon:
                 task, trigger=trigger, previous_killed=previous_killed
             )
             self._running[task.name] = rec
+        log.info(
+            "task %s: %s run #%d starting (previous_killed=%s)",
+            task.name,
+            trigger,
+            rec.id,
+            previous_killed,
+        )
 
         self._fire_callback(task.callbacks.start, rec)
         timeout = task.timeout or self.config.timeout
@@ -140,11 +158,24 @@ class Daemon:
                     success=result.success,
                 )
             except Exception as exc:
+                log.exception("task %s: run #%d failed", task.name, rec.id)
                 self.store.finalize(rec, return_code=None, success=False)
                 if self._error_handler:
                     self._error_handler(exc)
             finally:
                 self.store.prune(self.config.retention)
+                duration = 0.0
+                if rec.started_at and rec.ended_at:
+                    duration = (rec.ended_at - rec.started_at).total_seconds()
+                log.info(
+                    "task %s: %s run #%d finished: status=%s return_code=%s (%.1fs)",
+                    task.name,
+                    trigger,
+                    rec.id,
+                    rec.status,
+                    rec.return_code,
+                    duration,
+                )
                 end_url = (
                     task.callbacks.end_success
                     if rec.status == "success"
@@ -178,9 +209,14 @@ class Daemon:
         Returns the number of stale records updated.
         """
         updated = self.store.mark_stale_failed()
+        log.info("startup recovery: marked %d stale record(s) failed", updated)
         for st in self._scheduled:
             if self.runner.is_running(st.task):
                 # An orphan container left behind by a crashed daemon.
+                log.info(
+                    "stopping orphaned running container %s",
+                    st.task.container_name,
+                )
                 self.runner.stop(st.task)
         self._prune_orphan_containers()
         return updated
@@ -202,6 +238,7 @@ class Daemon:
             target=self._loop, name="supercron-scheduler", daemon=True
         )
         self._thread.start()
+        log.info("scheduler started")
 
     def stop(self) -> None:
         self._stop.set()

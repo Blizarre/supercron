@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -19,6 +20,8 @@ from urllib.parse import unquote, urlsplit
 from .cron import CronError, CronSchedule
 from .scheduler import Daemon, TaskNotFound
 from .tasks import utcnow
+
+log = logging.getLogger("supercron.http")
 
 
 class NotFound(Exception):
@@ -321,8 +324,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(code, text.encode("utf-8"), "text/plain; charset=utf-8")
 
     def log_message(self, message: str, *args: object) -> None:
-        # Keep the request log quiet during tests.
-        return
+        log.info("ui %s", message % args)
 
 
 class Server:
