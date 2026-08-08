@@ -29,11 +29,11 @@ tested; run `make check` before committing.
 - [x] Daemon startup recovery: stale `running` records marked failed, orphan
       containers stopped (`Daemon.recover`)
 
-## Phase 4 — HTTP callbacks
-- [ ] `start` / `end_success` / `end_failure` POSTs (optional URLs in
-      `cron.toml`)
-- [ ] Standard JSON payload: task, id, status, return code, timestamps
-- [ ] Best-effort send with timeout; log failures (no retries)
+## Phase 4 — HTTP callbacks — DONE
+- [x] `start` / `end_success` / `end_failure` POSTs (optional URLs in
+      `cron.toml`) (`supercron/callbacks.py`)
+- [x] Standard JSON payload: task, id, status, return code, timestamps
+- [x] Best-effort send with timeout; log failures (no retries)
 
 ## Phase 5 — Web UI + server
 - [ ] Serve history, status, and post-run logs per task

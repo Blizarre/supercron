@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from threading import Event, Lock, Thread
 
+from .callbacks import CallbackError, CallbackSender, build_payload
 from .config import RootConfig, read_config
 from .cron import CronError, CronSchedule
 from .records import ExecutionRecord, ResultsStore
@@ -39,11 +40,13 @@ class Daemon:
         poll_interval: float = 1.0,
         store: ResultsStore | None = None,
         runner: DockerRunner | None = None,
+        callbacks: CallbackSender | None = None,
     ):
         self.cron_dir = Path(cron_dir)
         self.config = config or read_config(self.cron_dir)
         self.store = store or ResultsStore(self.config.results_path)
         self.runner = runner or DockerRunner(self.config)
+        self.callbacks = callbacks if callbacks is not None else CallbackSender()
         self.poll_interval = poll_interval
 
         self._stop = Event()
@@ -100,6 +103,7 @@ class Daemon:
             )
             self._running[task.name] = rec
 
+        self._fire_callback(task.callbacks.start, rec)
         timeout = task.timeout or self.config.timeout
 
         def _finish() -> None:
@@ -115,11 +119,30 @@ class Daemon:
                 if self._error_handler:
                     self._error_handler(exc)
             finally:
+                end_url = (
+                    task.callbacks.end_success
+                    if rec.status == "success"
+                    else task.callbacks.end_failure
+                )
+                self._fire_callback(end_url, rec)
                 with self._lock:
                     self._running.pop(task.name, None)
 
         _finish()
         return rec
+
+    def _fire_callback(self, url: str | None, rec: ExecutionRecord) -> None:
+        """POST the lifecycle event if a callback URL is configured.
+
+        Best-effort: a failed send is only routed to the error handler.
+        """
+        if not url:
+            return
+        try:
+            self.callbacks.send(url, build_payload(rec))
+        except CallbackError as exc:
+            if self._error_handler:
+                self._error_handler(exc)
 
     # ------------------------------------------------------------ recovery
 
