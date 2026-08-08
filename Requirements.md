@@ -92,7 +92,14 @@ end_failure  = "https://monitoring.example/fail"
 - **Reset a task's container** (destroy + recreate) so environments can be
   rebuilt.
 - Poll-based refresh (no websocket needed; no live logs).
-- Daemon and web server run together (systemd unit recommended).
+- Daemon and web server run together, started via the `supercron` CLI
+  (`supercron --cron-dir /cron --host 0.0.0.0 --port 8080`); a systemd unit is
+  provided in `supercron.service`.
+
+## Daemon startup recovery
+- On startup the daemon marks records left `running` by a crashed run as
+  `failure`, stops orphaned still-running containers, and removes any
+  `supercron-*` container that no longer corresponds to a known task.
 
 ## Concurrency & atomicity
 - Per-task execution lock: at most one active execution per task.
@@ -102,25 +109,37 @@ end_failure  = "https://monitoring.example/fail"
   `start.sh`.
 
 ## Logging, retention, cleanup
-- daemon logs to stdout / a logfile (not part of execution data).
-- Configurable retention in `config.toml`: prune `results/<task>/` when
-  execution count or age exceeds a limit, so the results dir does not grow
-  unbounded.
+- daemon logs to stdout (not part of execution data).
+- Configurable retention in `config.toml` (`retention.max_executions` and
+  `retention.max_age_days`): `results/<task>/` is pruned when execution count
+  or age exceeds the limit, so the results dir does not grow unbounded.
+  Pruning runs after every execution; either limit may be disabled with
+  `null`.
 
 ## config.toml
-Contains at minimum: docker image (used to create persistent containers),
-mount path, per-task timeout default, SIGKILL grace period, retention policy,
-and default callback behavior. Exact schema defined during phase 1.
+```toml
+image      = "python:3.12"   # docker image for task containers
+mount_path = "/work"         # path the task dir is mounted to in the container
+tasks_dir  = "tasks"         # subdirectory under the cron root
+results_dir = "results"      # subdirectory for records/logs
+timeout    = 300             # default per-run timeout (seconds)
+kill_grace = 15              # SIGKILL grace period (seconds)
 
-## Development phases
+[retention]
+max_executions = 100         # max records kept per task (null = unlimited)
+max_age_days   = 30          # max age kept (null = unlimited)
+```
+
+## Implementation
+All phases are implemented and covered by tests (`make format` / `make check`):
 1. **Bootstrap**: Python project, `config.toml` schema, task discovery,
    execution-record TOML + log writers with atomic writes and per-task locks.
 2. **Container runner**: persistent-container create/reuse, `docker start`/
-   `stop` lifecycle, mount, env, exit-code capture, timeout/kill,
-   overlap-kill.
+   `stop` lifecycle, mount, exit-code capture, timeout/kill, overlap-kill.
 3. **Scheduling engine**: parse cron expressions, next-run timer, manual-trigger
-   endpoint, overlap handling.
+   endpoint, overlap handling, startup recovery.
 4. **Callbacks**: `start` / `end_success` / `end_failure` POSTs.
 5. **Web UI**: history/status/log views, manual trigger, container reset
    (poll-based).
-6. **Ops**: retention config, systemd unit, README, tests.
+6. **Ops**: retention/pruning, `supercron` CLI + systemd unit, orphaned-container
+   cleanup, README, end-to-end tests.

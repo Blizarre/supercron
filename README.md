@@ -135,5 +135,4 @@ make check    # ruff lint + mypy (strict) + pytest
 
 Run the test suite with `make check` before committing.
 
-See `Requirements.md` for the full specification and `TODO.md` for phase
-status.
+See [Requirements.md](Requirements.md) for the full specification.
