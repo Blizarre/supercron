@@ -94,6 +94,15 @@ def test_index_lists_task(ctx):
     assert "hello" in body and "history" in body
 
 
+def test_index_defines_action_script(ctx):
+    server, daemon, tasks_dir, _runner = ctx
+    add_task(tasks_dir, "hello")
+    daemon.refresh()
+    _status, body = get(server, "/")
+    assert "function action(url)" in body
+    assert "function poll()" in body
+
+
 def test_api_status_never_run(ctx):
     server, daemon, tasks_dir, _runner = ctx
     add_task(tasks_dir, "job")

@@ -110,7 +110,7 @@ class App:
             body += _table(("Status", "Task", "Schedule", "Next run", "", "", ""), rows)
         else:
             body += "<p>No tasks found.</p>"
-        return _page(body, index_script())
+        return _page(body, action_script() + index_script())
 
     def render_task(self, name: str) -> str:
         view = self.task_view(name)
