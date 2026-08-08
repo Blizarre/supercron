@@ -200,6 +200,43 @@ def test_post_reset_recreates_container(ctx):
     assert runner.created == ["job"]
 
 
+def test_post_reload_discovers_new_tasks(ctx):
+    server, daemon, tasks_dir, _runner = ctx
+    add_task(tasks_dir, "one")
+    daemon.refresh()
+    assert daemon.task_by_name("two") is None
+    add_task(tasks_dir, "two")
+    status, body = post(server, "/reload")
+    assert status == 200
+    assert json.loads(body) == {"ok": True}
+    assert daemon.task_by_name("two") is not None
+
+
+def test_index_has_reload_button(ctx):
+    server, daemon, tasks_dir, _runner = ctx
+    add_task(tasks_dir, "job")
+    daemon.refresh()
+    status, body = get(server, "/")
+    assert status == 200
+    assert "Reload tasks" in body and "/reload" in body
+
+
+def test_index_shows_status_emoji(ctx):
+    server, daemon, tasks_dir, _runner = ctx
+    add_task(tasks_dir, "job")
+    daemon.refresh()
+    daemon.store.write_record(
+        ExecutionRecord(id=1, task="job", status="success", return_code=0)
+    )
+    _status, body = get(server, "/")
+    assert "✅ success" in body
+    daemon.store.write_record(
+        ExecutionRecord(id=2, task="job", status="failure", return_code=1)
+    )
+    _status, body = get(server, "/")
+    assert "🔴 failure" in body
+
+
 def test_server_roundtrip_many_requests(ctx):
     server, _daemon, _tasks, _runner = ctx
     for _ in range(5):

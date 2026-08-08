@@ -86,6 +86,9 @@ class App:
     def reset(self, name: str) -> None:
         self.daemon.reset_task(name)
 
+    def reload_tasks(self) -> None:
+        self.daemon.refresh()
+
     # ------------------------------------------------------------ html
 
     def render_index(self) -> str:
@@ -94,7 +97,8 @@ class App:
             esc = html.escape
             name = esc(view["name"], quote=True)
             row = (
-                f'<td id="status-{name}" class="status">{esc(view["status"])}</td>'
+                f'<td id="status-{name}" class="status">'
+                f"{_status_emoji(view['status'])} {esc(view['status'])}</td>"
                 f"<td>{esc(view['title'])}</td>"
                 f"<td>{esc(view['schedule'] or '')}</td>"
                 f'<td id="next-{name}">{esc(view["next_run"] or "")}</td>'
@@ -109,6 +113,7 @@ class App:
             )
             rows.append(f"<tr>{row}</tr>")
         body = "<h1>supercron</h1>"
+        body += "<p><button onclick=\"action('/reload')\">Reload tasks</button></p>"
         if rows:
             body += _table(("Status", "Task", "Schedule", "Next run", "", "", ""), rows)
         else:
@@ -158,6 +163,15 @@ class App:
             f"<pre>{esc(self.log_view(name, eid))}</pre>"
         )
         return _page(body, "")
+
+
+def _status_emoji(status: str) -> str:
+    return {
+        "success": "✅",
+        "failure": "🔴",
+        "running": "🟠",
+        "never_run": "⚪",
+    }.get(status, "❔")
 
 
 def _fmt(value: datetime | None) -> str:
@@ -223,10 +237,14 @@ def action_script() -> str:
 def index_script() -> str:
     return (
         "<script>"
+        "var emojis={'success':'✅','failure':'🔴','running':'🟠','never_run':'⚪'};"
         "function poll(){fetch('/api/status').then(function(r){return r.json();})"
         ".then(function(data){data.forEach(function(t){"
         "var s=document.getElementById('status-'+t.name);"
-        "if(s){s.textContent=t.status;s.className='status '+t.status;}"
+        "if(s){"
+        "s.textContent=(emojis[t.status]||'❔')+' '+t.status;"
+        "s.className='status '+t.status;"
+        "}"
         "var n=document.getElementById('next-'+t.name);"
         "if(n){n.textContent=t.next_run||'';}"
         "});});}"
@@ -277,6 +295,10 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
         try:
+            if path == "/reload":
+                self.app.reload_tasks()
+                self._send_json({"ok": True})
+                return
             if path.startswith("/task/"):
                 rest = path[len("/task/") :].split("/")
                 name = unquote(rest[0])
