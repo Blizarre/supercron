@@ -88,7 +88,19 @@ class DockerRunner:
 
     def destroy(self, task: Task) -> None:
         """Force-remove the persistent container (for a reset/recreate)."""
-        self._cmd("rm", "-f", task.container_name)
+        self.remove_container(task.container_name)
+
+    def remove_container(self, name: str) -> None:
+        """Force-remove the container with the given name (no-op if absent)."""
+
+        self._cmd("rm", "-f", name)
+
+    def list_containers(self) -> set[str]:
+        """Return the names of all ``supercron-*`` containers (if any)."""
+        p = self._cmd("ps", "-a", "--format", "{{.Names}}")
+        if p.returncode != 0:
+            raise DockerError((p.stderr or p.stdout).strip())
+        return {name for name in p.stdout.split() if name.startswith("supercron-")}
 
     def _state(self, task: Task) -> tuple[str, int | None]:
         """Return (status, exit_code) of the container; 'missing' if absent."""

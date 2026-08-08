@@ -42,9 +42,10 @@ tested; run `make check` before committing.
 - [x] Container reset button
 - [x] Poll-based refresh (no live-tail)
 
-## Phase 6 — Ops & polish
-- [ ] Retention/pruning of `results/` (count/age) from `config.toml`
-- [ ] Daemon service (systemd unit)
-- [ ] Orphaned-container detection and cleanup on startup
-- [ ] README documenting layout, config, and usage
-- [ ] End-to-end tests
+## Phase 6 — Ops & polish — DONE
+- [x] Retention/pruning of `results/` (count/age) from `config.toml`
+- [x] Daemon service (systemd unit) + CLI entry point (`supercron`)
+- [x] Orphaned-container detection and cleanup on startup
+- [x] README documenting layout, config, and usage
+- [x] End-to-end tests
+

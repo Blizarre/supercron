@@ -144,6 +144,7 @@ class Daemon:
                 if self._error_handler:
                     self._error_handler(exc)
             finally:
+                self.store.prune(self.config.retention)
                 end_url = (
                     task.callbacks.end_success
                     if rec.status == "success"
@@ -172,13 +173,24 @@ class Daemon:
     # ------------------------------------------------------------ recovery
 
     def recover(self) -> int:
-        """Mark stale running records as failed and clean orphan containers."""
+        """Mark stale records failed, stop orphan runs, and drop stray containers.
+
+        Returns the number of stale records updated.
+        """
         updated = self.store.mark_stale_failed()
         for st in self._scheduled:
             if self.runner.is_running(st.task):
                 # An orphan container left behind by a crashed daemon.
                 self.runner.stop(st.task)
+        self._prune_orphan_containers()
         return updated
+
+    def _prune_orphan_containers(self) -> None:
+        """Remove ``supercron-*`` containers that no longer correspond to a task."""
+        known = {task.container_name for task in self.tasks()}
+        for name in self.runner.list_containers():
+            if name not in known:
+                self.runner.remove_container(name)
 
     # ------------------------------------------------------------ lifecycle
 

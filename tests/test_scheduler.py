@@ -14,12 +14,19 @@ class FakeRunner:
     def __init__(self):
         self.calls: list[str] = []
         self.alive = False
+        self.containers: set[str] = set()
 
     def is_running(self, task):
         return self.alive
 
     def stop(self, task):
         self.alive = False
+
+    def list_containers(self):
+        return set(self.containers)
+
+    def remove_container(self, name):
+        self.containers.discard(name)
 
     def run_execution(self, task, log_path, timeout=None):
         self.calls.append(task.name)
@@ -157,6 +164,18 @@ def test_recover_stops_orphan_running_container(tmp_path):
     runner.alive = True
     daemon.recover()
     assert runner.alive is False
+
+
+def test_recover_removes_orphan_containers(tmp_path):
+    daemon, tasks_dir, runner = build(tmp_path)
+    add_task(tasks_dir, "t")
+    daemon.refresh()
+    task = daemon.task_by_name("t")
+    assert task is not None
+    runner.containers = {task.container_name, "supercron-gone"}
+    daemon.recover()
+    assert "supercron-gone" not in runner.containers
+    assert task.container_name in runner.containers
 
 
 def test_run_task_end_to_end_with_docker(tmp_path):

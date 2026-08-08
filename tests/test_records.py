@@ -1,12 +1,13 @@
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from supercron.config import Retention
 from supercron.records import ExecutionRecord, RecordNotFound, ResultsStore
-from supercron.tasks import Task
+from supercron.tasks import Task, utcnow
 
 
 def _task(tmp_path, name="task1"):
@@ -166,3 +167,49 @@ def test_write_record_without_lock_persists(tmp_path):
     loaded = store.load_record("task1", 42)
     assert loaded.id == 42
     assert loaded.task == "task1"
+
+
+def test_prune_by_execution_count(tmp_path):
+    store = ResultsStore(tmp_path / "results")
+    for i in range(1, 6):
+        rec = ExecutionRecord(id=i, task="task1", status="success")
+        store.write_record(rec)
+    store.prune(Retention(max_executions=3, max_age_days=None))
+    assert [r.id for r in store.list_records("task1")] == [3, 4, 5]
+
+
+def test_prune_by_age(tmp_path):
+    store = ResultsStore(tmp_path / "results")
+    old = ExecutionRecord(
+        id=1,
+        task="task1",
+        status="failure",
+        started_at=utcnow() - timedelta(days=60),
+        ended_at=utcnow() - timedelta(days=59),
+    )
+    new = ExecutionRecord(
+        id=2,
+        task="task1",
+        status="success",
+        started_at=utcnow(),
+        ended_at=utcnow(),
+    )
+    store.write_record(old)
+    store.write_record(new)
+    store.prune(Retention(max_executions=None, max_age_days=30))
+    assert [r.id for r in store.list_records("task1")] == [2]
+
+
+def test_prune_removes_log_files_too(tmp_path):
+    store = ResultsStore(tmp_path / "results")
+    for i in (1, 2, 3):
+        store.write_record(ExecutionRecord(id=i, task="task1", status="success"))
+        (store.task_dir("task1") / f"{i}.log").write_text("x\n")
+    store.prune(Retention(max_executions=1, max_age_days=None))
+    assert not (store.task_dir("task1") / "1.log").exists()
+    assert (store.task_dir("task1") / "3.log").exists()
+
+
+def test_prune_missing_results_dir_is_noop(tmp_path):
+    store = ResultsStore(tmp_path / "results")
+    assert store.prune(Retention(max_executions=5)) == 0

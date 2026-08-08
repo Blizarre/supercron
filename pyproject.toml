@@ -12,6 +12,9 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff", "mypy"]
 
+[project.scripts]
+supercron = "supercron.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["supercron*"]
 
@@ -73,6 +76,13 @@ disable_error_code = ["arg-type", "assignment"]
 
 [[tool.mypy.overrides]]
 module = "test_server"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+disable_error_code = ["arg-type", "assignment", "attr-defined"]
+
+[[tool.mypy.overrides]]
+module = "test_e2e"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 disallow_untyped_calls = false

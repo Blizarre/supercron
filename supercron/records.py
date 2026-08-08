@@ -10,10 +10,11 @@ import os
 import tempfile
 import tomllib
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 
+from .config import Retention
 from .tasks import Task, utcnow
 
 
@@ -208,3 +209,38 @@ class ResultsStore:
                 continue
         recs.sort(key=lambda r: r.id)
         return recs
+
+    def prune(self, retention: Retention) -> int:
+        """Delete records (and their logs) outside the retention policy.
+
+        A record is pruned when it is older than the newest
+        ``max_executions`` records or its end/start time precedes
+        ``max_age_days``. A ``None`` limit disables that constraint.
+        Returns the number of files removed.
+        """
+        removed = 0
+        if not self.results_dir.is_dir():
+            return removed
+        for task_dir in sorted(p for p in self.results_dir.iterdir() if p.is_dir()):
+            removed += self._prune_task(task_dir, retention)
+        return removed
+
+    def _prune_task(self, task_dir: Path, retention: Retention) -> int:
+        records = self.list_records(task_dir.name)
+        doomed: set[int] = set()
+        if retention.max_executions is not None:
+            overflow = len(records) - retention.max_executions
+            if overflow > 0:
+                doomed.update(r.id for r in records[:overflow])
+        if retention.max_age_days is not None:
+            cutoff = utcnow() - timedelta(days=retention.max_age_days)
+            for rec in records:
+                ended = rec.ended_at or rec.started_at
+                if ended is not None and ended < cutoff:
+                    doomed.add(rec.id)
+        removed = 0
+        for eid in doomed:
+            (task_dir / f"{eid}.toml").unlink(missing_ok=True)
+            (task_dir / f"{eid}.log").unlink(missing_ok=True)
+            removed += 1
+        return removed

@@ -1,0 +1,27 @@
+# supercron systemd unit
+#
+# Install:
+#   sudo cp supercron.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now supercron
+#
+# Adjust ExecStart paths, --cron-dir, and --host if needed. Docker must be
+# running and the user in the `docker` group (or use an appropriate
+# User=/Group=).
+
+[Unit]
+Description=supercron persistent-container cron daemon
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/supercron --cron-dir /cron --host 127.0.0.1 --port 8080
+# User=supercron
+# Group=supercron
+Restart=on-failure
+RestartSec=5
+# Environment=SUPERCRON_CONFIG=/etc/supercron/config.toml
+
+[Install]
+WantedBy=multi-user.target
