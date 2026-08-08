@@ -1,0 +1,142 @@
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from supercron.config import load_config
+from supercron.cron import CronError, CronSchedule
+from supercron.records import ExecutionRecord, ResultsStore
+from supercron.runner import DockerError, ExecutionResult
+from supercron.scheduler import Daemon
+
+
+class FakeRunner:
+    def __init__(self):
+        self.calls: list[str] = []
+        self.alive = False
+
+    def is_running(self, task):
+        return self.alive
+
+    def _stop(self, task):
+        self.alive = False
+
+    def run_execution(self, task, log_path, timeout=None):
+        self.calls.append(task.name)
+        log_path.write_text("fake\n")
+        return ExecutionResult(exit_code=0)
+
+
+def build(tmp_path) -> tuple[Daemon, Path, FakeRunner]:
+    """Create config + tasks dir and return a daemon wired to a fake runner."""
+    (tmp_path / "config.toml").write_text('image = "busybox:latest"\n')
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir(parents=True)
+    cfg = load_config(tmp_path, {"tasks_dir": "tasks"})
+    runner = FakeRunner()
+    daemon = Daemon(
+        str(tmp_path),
+        config=cfg,
+        poll_interval=3600,
+        store=ResultsStore(cfg.results_path),
+        runner=runner,
+    )
+    return daemon, tasks_dir, runner
+
+
+def add_task(tasks_dir: Path, name: str, schedule=None):
+    task_dir = tasks_dir / name
+    task_dir.mkdir(parents=True)
+    (task_dir / "start.sh").write_text("#!/bin/sh\nexit 0\n")
+    (task_dir / "start.sh").chmod(0o755)
+    cron = f'title = "{name}"\n'
+    if schedule:
+        cron += f'schedule = "{schedule}"\n'
+    (task_dir / "cron.toml").write_text(cron)
+
+
+def test_daemon_refresh_compiles_schedule(tmp_path):
+    daemon, tasks_dir, _runner = build(tmp_path)
+    add_task(tasks_dir, "t", schedule="*/5 * * * *")
+    daemon.refresh()
+    assert len(daemon.scheduled_tasks()) == 1
+    assert daemon.scheduled_tasks()[0].schedule == CronSchedule.parse("*/5 * * * *")
+
+
+def test_daemon_refresh_invalid_schedule_raises(tmp_path):
+    daemon, tasks_dir, _runner = build(tmp_path)
+    add_task(tasks_dir, "bad", schedule="not a cron")
+    with pytest.raises(CronError):
+        daemon.refresh()
+
+
+def test_run_task_creates_success_record(tmp_path):
+    daemon, tasks_dir, runner = build(tmp_path)
+    add_task(tasks_dir, "t")
+    daemon.refresh()
+    rec = daemon.run_task(daemon.task_by_name("t"), trigger="manual")
+    assert runner.calls == ["t"]
+    assert rec.status == "success"
+    assert rec.trigger == "manual"
+    assert rec.ended_at is not None
+    assert daemon.store.load_record("t", rec.id).status == "success"
+
+
+def test_run_task_marks_failure_on_runner_error(tmp_path):
+    class BoomRunner(FakeRunner):
+        def run_execution(self, task, log_path, timeout=None):
+            raise DockerError("boom")
+
+    daemon, tasks_dir, _runner = build(tmp_path)
+    daemon.runner = BoomRunner()
+    add_task(tasks_dir, "t")
+    daemon.refresh()
+    rec = daemon.run_task(daemon.task_by_name("t"), trigger="manual")
+    assert rec.status == "failure"
+    assert rec.return_code is None
+
+
+def test_dispatch_runs_due_scheduled_tasks(tmp_path):
+    daemon, tasks_dir, runner = build(tmp_path)
+    add_task(tasks_dir, "t", schedule="*/5 * * * *")
+    daemon.refresh()
+    daemon._dispatch_due(datetime(2026, 8, 8, 10, 5, tzinfo=UTC))
+    assert runner.calls == ["t"]
+    daemon._dispatch_due(datetime(2026, 8, 8, 10, 6, tzinfo=UTC))
+    assert runner.calls == ["t"]
+
+
+def test_recover_marks_stale_running_records(tmp_path):
+    daemon, tasks_dir, _runner = build(tmp_path)
+    add_task(tasks_dir, "t")
+    daemon.refresh()
+    store = ResultsStore(tmp_path / "results")
+    store.write_record(ExecutionRecord(id=1, task="t", status="running"))
+    assert daemon.recover() == 1
+    loaded = store.load_record("t", 1)
+    assert loaded.status == "failure"
+    assert loaded.ended_at is not None
+
+
+def test_run_task_end_to_end_with_docker(tmp_path):
+    from supercron.runner import DockerRunner
+
+    if not DockerRunner.available():
+        pytest.skip("docker daemon not available")
+
+    (tmp_path / "config.toml").write_text('image = "busybox:latest"\ntimeout = 10\n')
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir(parents=True)
+    add_task(tasks_dir, "e2e")
+    cfg = load_config(tmp_path, {"tasks_dir": "tasks"})
+    daemon = Daemon(str(tmp_path), config=cfg, poll_interval=3600)
+    daemon.refresh()
+    task = daemon.task_by_name("e2e")
+    assert task is not None
+    try:
+        rec = daemon.run_task(task, trigger="manual")
+        assert rec.status == "success"
+        log_path = daemon.store.task_dir(task.name) / f"{rec.id}.log"
+        assert log_path.exists()
+    finally:
+        daemon.runner.destroy(task)

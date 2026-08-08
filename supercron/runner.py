@@ -106,6 +106,9 @@ class DockerRunner:
     def _stop(self, task: Task) -> None:
         self._cmd("stop", "-t", str(self.config.kill_grace), task.container_name)
 
+    def is_running(self, task: Task) -> bool:
+        return self._state(task)[0] == "running"
+
     # ------------------------------------------------------------ execution
 
     def run_execution(

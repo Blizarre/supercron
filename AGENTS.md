@@ -29,4 +29,17 @@ fires HTTP callbacks, and exposes a web UI.
 - Python 3.11+, standard library only for runtime dependencies.
 - Formatting and linting are enforced by ruff (see `pyproject.toml`).
 - Tests live in `tests/` and run with pytest.
-- Do not add comments to code unless asked.
+- Comment the code at a high level: add comments about blocks of code if the logic is complex
+- Use meaningful method names and variables. Try to make the code self-explanotary.
+- Do not add comments when the meaning is already conveyed by the method/names. For instance do NOT do this:
+```python
+# Fabulate the interface
+interface.fabulate()
+```
+instead do THIS:
+```python
+interface.fabulate()
+```
+- Try to extract the low-level code into methods with a meaningful name, but avoid trivial methods that are less than 3 lines long, unless it is repeated many times in the codebase
+- Error handling is paramount and in python, exception-based. Do not catch an exception and return None. Instead let the exception propagate and let the caller make a decision
+on how to log and handle it.

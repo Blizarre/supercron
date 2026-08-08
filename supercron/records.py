@@ -164,6 +164,23 @@ class ResultsStore:
         rec.status = "success" if success else "failure"
         self.write_record(rec)
 
+    def mark_stale_failed(self) -> int:
+        """Mark records left 'running' by a crashed daemon as failed.
+
+        Returns the number of records updated.
+        """
+        updated = 0
+        for task_dir in sorted(p for p in self.results_dir.iterdir() if p.is_dir()):
+            task_name = task_dir.name
+            for rec in self.list_records(task_name):
+                if rec.status == "running" and rec.ended_at is None:
+                    rec.status = "failure"
+                    rec.ended_at = utcnow()
+                    rec.return_code = None
+                    self.write_record(rec)
+                    updated += 1
+        return updated
+
     def load_record(self, task_name: str, eid: int) -> ExecutionRecord:
         path = self.task_dir(task_name) / f"{eid}.toml"
         with path.open("rb") as fh:
