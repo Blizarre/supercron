@@ -72,7 +72,7 @@ class CronSchedule:
 
 
 _FULL_DOM = frozenset(range(1, 32))
-_FULL_DOW = frozenset(range(0, 7)) | {7}
+_FULL_DOW = frozenset(range(0, 7))
 
 
 def _parse_field(spec: str, lo: int, hi: int) -> set[int]:

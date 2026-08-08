@@ -9,12 +9,16 @@ import fcntl
 import os
 import tempfile
 import tomllib
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import IO, Any
 
 from .tasks import Task, utcnow
+
+
+class RecordNotFound(Exception):
+    """Raised when an execution record does not exist."""
 
 
 @dataclass
@@ -28,11 +32,9 @@ class ExecutionRecord:
     log_file: str = ""
     trigger: str = ""  # cron | manual | overridden
     previous_killed: bool = False
-    extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        d.pop("extra", None)
         for k in ("started_at", "ended_at"):
             v = d.get(k)
             if isinstance(v, datetime):
@@ -52,7 +54,6 @@ def _record_from_dict(data: dict[str, Any]) -> ExecutionRecord:
         trigger=data.get("trigger", ""),
         previous_killed=bool(data.get("previous_killed", False)),
     )
-    rec.extra = {k: v for k, v in data.items() if k not in asdict(rec)}
     return rec
 
 
@@ -89,6 +90,10 @@ class ResultsStore:
         d = self.results_dir / task_name
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    def existing_task_dir(self, task_name: str) -> Path | None:
+        d = self.results_dir / task_name
+        return d if d.is_dir() else None
 
     def _lock_path(self, task_name: str) -> Path:
         return self.task_dir(task_name) / ".lock"
@@ -129,7 +134,7 @@ class ResultsStore:
             )
             log_path = self.task_dir(task.name) / f"{eid}.log"
             rec.log_file = str(log_path)
-            self._write_record_locked(rec)
+            self._atomic_write(rec)
             return rec, log_path
         finally:
             self._unlock(lock_fh)
@@ -150,9 +155,6 @@ class ResultsStore:
             os.unlink(tmp)
             raise
 
-    def _write_record_locked(self, rec: ExecutionRecord) -> None:
-        self._atomic_write(rec)
-
     def write_record(self, rec: ExecutionRecord) -> None:
         self._atomic_write(rec)
 
@@ -170,6 +172,8 @@ class ResultsStore:
         Returns the number of records updated.
         """
         updated = 0
+        if not self.results_dir.is_dir():
+            return updated
         for task_dir in sorted(p for p in self.results_dir.iterdir() if p.is_dir()):
             task_name = task_dir.name
             for rec in self.list_records(task_name):
@@ -182,14 +186,19 @@ class ResultsStore:
         return updated
 
     def load_record(self, task_name: str, eid: int) -> ExecutionRecord:
-        path = self.task_dir(task_name) / f"{eid}.toml"
+        task_dir = self.existing_task_dir(task_name)
+        if task_dir is None:
+            raise RecordNotFound(f"no record for task {task_name!r} id {eid}")
+        path = task_dir / f"{eid}.toml"
         with path.open("rb") as fh:
             data = tomllib.load(fh)
         return _record_from_dict(data)
 
     def list_records(self, task_name: str) -> list[ExecutionRecord]:
-        paths = list(self.task_dir(task_name).glob("*.toml"))
-        paths = [p for p in paths if p.name != "meta.toml"]
+        task_dir = self.existing_task_dir(task_name)
+        if task_dir is None:
+            return []
+        paths = [p for p in task_dir.glob("*.toml") if p.name != "meta.toml"]
         recs = []
         for p in paths:
             try:

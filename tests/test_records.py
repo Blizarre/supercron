@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from supercron.records import ExecutionRecord, ResultsStore
+from supercron.records import ExecutionRecord, RecordNotFound, ResultsStore
 from supercron.tasks import Task
 
 
@@ -107,7 +107,7 @@ def test_open_log_appends(tmp_path):
 
 def test_load_record_missing_raises(tmp_path):
     store = ResultsStore(tmp_path / "results")
-    with pytest.raises(OSError):
+    with pytest.raises(RecordNotFound):
         store.load_record("task1", 99)
 
 

@@ -21,6 +21,7 @@ def dt(y, mo, d, h=0, mi=0):
         ("0 0 1 1 *", dt(2026, 8, 8, 10, 0), dt(2027, 1, 1, 0, 0)),
         ("15,45 * * * *", dt(2026, 8, 8, 10, 20), dt(2026, 8, 8, 10, 45)),
         ("0 0 * * 7", dt(2026, 8, 8, 10, 0), dt(2026, 8, 9, 0, 0)),  # Sunday=7
+        ("0 0 1 * *", dt(2026, 8, 8, 10, 0), dt(2026, 9, 1, 0, 0)),  # DOM only
     ],
 )
 def test_next_after(expr, base, expected):
@@ -44,6 +45,13 @@ def test_dom_or_dow_semantics():
     s = CronSchedule.parse("0 0 13 * 5")
     fri_13 = dt(2026, 11, 13, 0, 0)  # a Friday the 13th
     assert s.matches(fri_13)
+
+
+def test_dom_restricted_with_dow_wildcard_only_matches_dom():
+    # 0 0 1 * * : DOM restricted, DOW wildcard must not match every day.
+    s = CronSchedule.parse("0 0 1 * *")
+    assert s.matches(dt(2026, 8, 1, 0, 0))
+    assert not s.matches(dt(2026, 8, 2, 0, 0))
 
 
 def test_invalid_field_count():

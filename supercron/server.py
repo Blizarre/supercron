@@ -295,7 +295,11 @@ class _Handler(BaseHTTPRequestHandler):
         if len(parts) == 1:
             return self.app.render_task(name)
         if len(parts) == 3 and parts[1] == "log":
-            return self.app.render_log(name, int(parts[2]))
+            try:
+                eid = int(parts[2])
+            except ValueError:
+                raise NotFound(rest) from None
+            return self.app.render_log(name, eid)
         raise NotFound(rest)
 
     # ------------------------------------------------------------ helpers

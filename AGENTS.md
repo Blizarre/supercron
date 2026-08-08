@@ -26,7 +26,7 @@ fires HTTP callbacks, and exposes a web UI.
 
 ## Conventions
 
-- Python 3.11+, standard library only for runtime dependencies.
+- Python 3.11+, standard library as much as possible for runtime dependencies.
 - Formatting and linting are enforced by ruff (see `pyproject.toml`).
 - Tests live in `tests/` and run with pytest.
 - Comment the code at a high level: add comments about blocks of code if the logic is complex
@@ -41,5 +41,8 @@ instead do THIS:
 interface.fabulate()
 ```
 - Try to extract the low-level code into methods with a meaningful name, but avoid trivial methods that are less than 3 lines long, unless it is repeated many times in the codebase
+- Do not return None on failure, throw a dedicated Exception with a message
 - Error handling is paramount and in python, exception-based. Do not catch an exception and return None. Instead let the exception propagate and let the caller make a decision
 on how to log and handle it.
+- In python, do not use getattr() to see if an object has a field. Use interfaces/abstract classes instead to enforce the presence of these fields by the type checker
+- Do not raise raw Exceptions, create custom types instead

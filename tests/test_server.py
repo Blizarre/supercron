@@ -145,6 +145,14 @@ def test_unknown_task_page_404(ctx):
     assert status == 404
 
 
+def test_non_numeric_log_id_404(ctx):
+    server, daemon, tasks_dir, _runner = ctx
+    add_task(tasks_dir, "job")
+    daemon.refresh()
+    status, _ = get(server, "/task/job/log/not-a-number")
+    assert status == 404
+
+
 def test_post_run_triggers_execution(ctx):
     server, daemon, tasks_dir, _runner = ctx
     add_task(tasks_dir, "job")

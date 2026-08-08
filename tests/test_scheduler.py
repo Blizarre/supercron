@@ -18,7 +18,7 @@ class FakeRunner:
     def is_running(self, task):
         return self.alive
 
-    def _stop(self, task):
+    def stop(self, task):
         self.alive = False
 
     def run_execution(self, task, log_path, timeout=None):
@@ -96,6 +96,24 @@ def test_run_task_marks_failure_on_runner_error(tmp_path):
     assert rec.return_code is None
 
 
+def test_run_task_finalizes_on_unexpected_error(tmp_path):
+    class CrashRunner(FakeRunner):
+        def run_execution(self, task, log_path, timeout=None):
+            raise RuntimeError("boom")
+
+    daemon, tasks_dir, _runner = build(tmp_path)
+    daemon.runner = CrashRunner()
+    add_task(tasks_dir, "t")
+    daemon.refresh()
+    errors: list[Exception] = []
+    daemon.set_error_handler(errors.append)
+    rec = daemon.run_task(daemon.task_by_name("t"), trigger="manual")
+    assert rec.status == "failure"
+    assert rec.return_code is None
+    assert daemon.store.load_record("t", rec.id).status == "failure"
+    assert len(errors) == 1
+
+
 def test_trigger_task_unknown_raises(tmp_path):
     daemon, _tasks_dir, _runner = build(tmp_path)
     daemon.refresh()
@@ -130,6 +148,15 @@ def test_recover_marks_stale_running_records(tmp_path):
     loaded = store.load_record("t", 1)
     assert loaded.status == "failure"
     assert loaded.ended_at is not None
+
+
+def test_recover_stops_orphan_running_container(tmp_path):
+    daemon, tasks_dir, runner = build(tmp_path)
+    add_task(tasks_dir, "t", schedule="* * * * *")
+    daemon.refresh()
+    runner.alive = True
+    daemon.recover()
+    assert runner.alive is False
 
 
 def test_run_task_end_to_end_with_docker(tmp_path):

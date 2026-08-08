@@ -17,7 +17,7 @@ from .callbacks import CallbackError, CallbackSender, build_payload
 from .config import RootConfig, read_config
 from .cron import CronError, CronSchedule
 from .records import ExecutionRecord, ResultsStore
-from .runner import DockerError, DockerRunner
+from .runner import DockerRunner
 from .tasks import Task, discover_tasks, utcnow
 
 
@@ -111,9 +111,6 @@ class Daemon:
             raise TaskNotFound(f"no task named {name!r}")
         return task
 
-    def running_records(self) -> dict[str, ExecutionRecord]:
-        return dict(self._running)
-
     def set_error_handler(self, handler: Callable[[Exception], None]) -> None:
         self._error_handler = handler
 
@@ -142,7 +139,7 @@ class Daemon:
                     return_code=result.exit_code,
                     success=result.success,
                 )
-            except DockerError as exc:
+            except Exception as exc:
                 self.store.finalize(rec, return_code=None, success=False)
                 if self._error_handler:
                     self._error_handler(exc)
@@ -180,7 +177,7 @@ class Daemon:
         for st in self._scheduled:
             if self.runner.is_running(st.task):
                 # An orphan container left behind by a crashed daemon.
-                self.runner._stop(st.task)
+                self.runner.stop(st.task)
         return updated
 
     # ------------------------------------------------------------ lifecycle

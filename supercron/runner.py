@@ -103,7 +103,9 @@ class DockerRunner:
         status, code = p.stdout.strip().split("\t")
         return status, int(code)
 
-    def _stop(self, task: Task) -> None:
+    def stop(self, task: Task) -> None:
+        """Stop a running container, giving it ``kill_grace`` seconds."""
+
         self._cmd("stop", "-t", str(self.config.kill_grace), task.container_name)
 
     def is_running(self, task: Task) -> bool:
@@ -129,7 +131,7 @@ class DockerRunner:
 
         state, _ = self._state(task)
         if state == "running":
-            self._stop(task)
+            self.stop(task)
         elif state == "missing":
             self.ensure_container(task)
 
@@ -145,7 +147,7 @@ class DockerRunner:
                 if state != "running":
                     break
                 if deadline is not None and time.monotonic() >= deadline:
-                    self._stop(task)
+                    self.stop(task)
                     timed_out = True
                     break
                 time.sleep(self.poll_interval)
