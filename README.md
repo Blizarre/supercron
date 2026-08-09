@@ -1,8 +1,10 @@
-# supercron
+# SuperCron
 
 A cron replacement written in Python: a daemon that runs tasks in isolated
 persistent Docker containers, records every execution as a TOML file, fires
 HTTP callbacks, and exposes a web UI. No database.
+
+Made with 🤖❤️: [DeepSeek V4 Flash 0731](https://openrouter.ai/deepseek/deepseek-v4-flash-0731) with [OpenCode](https://opencode.ai).
 
 ## How it works
 
