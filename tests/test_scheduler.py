@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -156,6 +156,63 @@ def test_dispatch_runs_due_scheduled_tasks(tmp_path):
     daemon._dispatch_due(datetime(2026, 8, 8, 10, 5, tzinfo=UTC))
     assert runner.calls == ["t"]
     daemon._dispatch_due(datetime(2026, 8, 8, 10, 6, tzinfo=UTC))
+    assert runner.calls == ["t"]
+
+
+def test_wait_until_next_due_returns_when_clock_reaches_due(tmp_path, monkeypatch):
+    """Regression: the scheduling loop must hand a due time to the dispatcher.
+
+    Previously next_due was recomputed from the current clock each poll, and
+    because next_after() is strictly-after, wait never reached <= 0, so due
+    tasks were never dispatched on schedule.
+    """
+    daemon, tasks_dir, _runner = build(tmp_path)
+    add_task(tasks_dir, "t", schedule="*/5 * * * *")
+    daemon.refresh()
+
+    now = [datetime(2026, 8, 9, 10, 0, 0, tzinfo=UTC)]
+    monkeypatch.setattr("supercron.scheduler.utcnow", lambda: now[0])
+
+    class FakeStop:
+        def __init__(self):
+            self.stopped = False
+
+        def is_set(self):
+            return self.stopped
+
+        def wait(self, seconds):
+            now[0] += timedelta(seconds=seconds)
+
+    daemon._stop = FakeStop()
+    due = daemon._wait_until_next_due()
+    assert due == datetime(2026, 8, 9, 10, 5, 0, tzinfo=UTC)
+
+
+def test_scheduler_loop_dispatches_due_task(tmp_path, monkeypatch):
+    """End-to-end check that the loop actually runs the due task."""
+    daemon, tasks_dir, runner = build(tmp_path)
+    add_task(tasks_dir, "t", schedule="*/5 * * * *")
+    daemon.refresh()
+
+    now = [datetime(2026, 8, 9, 10, 0, 0, tzinfo=UTC)]
+    monkeypatch.setattr("supercron.scheduler.utcnow", lambda: now[0])
+
+    class FakeStop:
+        def __init__(self):
+            self.stopped = False
+
+        def is_set(self):
+            return self.stopped
+
+        def wait(self, seconds):
+            now[0] += timedelta(seconds=seconds)
+            # Trip the stop only once the clock is past the due time, so the
+            # 10:05 dispatch runs before the loop exits.
+            if now[0] > datetime(2026, 8, 9, 10, 5, 0, tzinfo=UTC):
+                self.stopped = True
+
+    daemon._stop = FakeStop()
+    daemon._loop()
     assert runner.calls == ["t"]
 
 

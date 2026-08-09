@@ -255,22 +255,30 @@ class Daemon:
                 if self._error_handler:
                     self._error_handler(exc)
 
+    def _earliest_next(self, base: datetime) -> datetime | None:
+        """Return the soonest next run across all tasks, or None if none."""
+        next_due: datetime | None = None
+        for st in self._scheduled:
+            try:
+                nxt = st.next_after(base)
+            except CronError:
+                continue
+            if next_due is None or nxt < next_due:
+                next_due = nxt
+        return next_due
+
     def _wait_until_next_due(self) -> datetime | None:
+        # Compute the due time once, then sleep until the clock reaches it.
+        # It is not recomputed each poll, otherwise next_after(now) always
+        # yields a strictly-future instant and the due run would be skipped.
+        next_due = self._earliest_next(utcnow())
         while not self._stop.is_set():
-            now = utcnow()
-            next_due: datetime | None = None
-            for st in self._scheduled:
-                try:
-                    nxt = st.next_after(now)
-                except CronError:
-                    continue
-                if next_due is None or nxt < next_due:
-                    next_due = nxt
             if next_due is None:
                 # No scheduled tasks; sleep until interrupted.
                 self._stop.wait(30)
+                next_due = self._earliest_next(utcnow())
                 continue
-            wait = (next_due - now).total_seconds()
+            wait = (next_due - utcnow()).total_seconds()
             if wait <= 0:
                 return next_due
             self._stop.wait(min(wait, self.poll_interval))
