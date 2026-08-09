@@ -120,6 +120,11 @@ def fetch(base_url: str, name: str, eid: int) -> dict[str, Any]:
 
 
 def leaked_docker_procs() -> bool:
+    if shutil.which("pgrep") is None:
+        raise RuntimeError(
+            "pgrep is required to verify that no docker subprocess leaked, "
+            "but it is not installed"
+        )
     pattern = rf"docker (logs|start|stop) {PREFIX}"
     p = subprocess.run(["pgrep", "-f", pattern], capture_output=True)
     return p.returncode == 0
@@ -419,12 +424,11 @@ def test_real_docker_e2e(tmp_path, docker_env):
                 assert log_path.stat().st_size > 0, f"{name}: empty log {log_path.name}"
         step("UI/API counts, statuses and on-disk records all consistent")
 
-        if shutil.which("pgrep") is not None:
-            wait_until(
-                lambda: not leaked_docker_procs(),
-                10,
-                msg="a docker subprocess leaked for a supercron container",
-            )
+        wait_until(
+            lambda: not leaked_docker_procs(),
+            10,
+            msg="a docker subprocess leaked for a supercron container",
+        )
 
         step("SIGTERM daemon")
         rc = daemon.stop()

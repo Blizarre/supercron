@@ -46,3 +46,8 @@ interface.fabulate()
 on how to log and handle it.
 - In python, do not use getattr() to see if an object has a field. Use interfaces/abstract classes instead to enforce the presence of these fields by the type checker
 - Do not raise raw Exceptions, create custom types instead
+- Tests must never silently depend on the environment: a test that skips a
+  check because a tool or capability is missing hides what is actually
+  exercised in a given run, so you never know what was really tested. If a
+  test cannot verify its feature, it must fail loudly and clearly instead of
+  skipping.
