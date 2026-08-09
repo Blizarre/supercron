@@ -1,3 +1,5 @@
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -34,6 +36,51 @@ class FakeRunner:
         return ExecutionResult(exit_code=0)
 
 
+class ConcurrentRunner(FakeRunner):
+    """Blocks every execution until released so runs provably overlap."""
+
+    def __init__(self):
+        super().__init__()
+        self.started: set[str] = set()
+        self.release = threading.Event()
+
+    def run_execution(self, task, log_path, timeout=None):
+        self.started.add(task.name)
+        self.release.wait(5)
+        self.calls.append(task.name)
+        log_path.write_text("ran\n")
+        return ExecutionResult(exit_code=0)
+
+
+class OverlapRunner(FakeRunner):
+    """Simulates a lingering run that a later tick overlap-kills."""
+
+    def __init__(self):
+        super().__init__()
+        self.active = 0
+        self.first_started = threading.Event()
+        self.first_kill = threading.Event()
+
+    def is_running(self, task):
+        return self.active > 0
+
+    def stop(self, task):
+        self.first_kill.set()
+
+    def run_execution(self, task, log_path, timeout=None):
+        if self.active == 0:
+            self.active = 1
+            self.first_started.set()
+            if self.first_kill.wait(5):
+                log_path.write_text("killed\n")
+                return ExecutionResult(exit_code=137)
+            log_path.write_text("ok\n")
+            return ExecutionResult(exit_code=0)
+        self.stop(task)
+        log_path.write_text("ok\n")
+        return ExecutionResult(exit_code=0)
+
+
 def build(tmp_path) -> tuple[Daemon, Path, FakeRunner]:
     """Create config + tasks dir and return a daemon wired to a fake runner."""
     (tmp_path / "config.toml").write_text('image = "busybox:latest"\n')
@@ -60,6 +107,15 @@ def add_task(tasks_dir: Path, name: str, schedule=None):
     if schedule:
         cron += f'schedule = "{schedule}"\n'
     (task_dir / "cron.toml").write_text(cron)
+
+
+def wait_until(condition, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if condition():
+            return
+        time.sleep(0.01)
+    raise AssertionError(f"condition not met within {timeout:.1f}s")
 
 
 def test_daemon_resolves_relative_cron_dir(tmp_path, monkeypatch):
@@ -154,9 +210,54 @@ def test_dispatch_runs_due_scheduled_tasks(tmp_path):
     add_task(tasks_dir, "t", schedule="*/5 * * * *")
     daemon.refresh()
     daemon._dispatch_due(datetime(2026, 8, 8, 10, 5, tzinfo=UTC))
-    assert runner.calls == ["t"]
+    wait_until(lambda: runner.calls == ["t"])
     daemon._dispatch_due(datetime(2026, 8, 8, 10, 6, tzinfo=UTC))
+    time.sleep(0.05)  # dispatch is async; a wrong match would have shown up
     assert runner.calls == ["t"]
+
+
+def test_cron_dispatch_runs_due_tasks_concurrently(tmp_path):
+    """Cron ticks at the same minute run in parallel instead of serializing."""
+    runner = ConcurrentRunner()
+    daemon, tasks_dir, _runner = build(tmp_path)
+    daemon.runner = runner
+    add_task(tasks_dir, "a", schedule="* * * * *")
+    add_task(tasks_dir, "b", schedule="* * * * *")
+    daemon.refresh()
+
+    def finalized(name):
+        recs = daemon.store.list_records(name)
+        return len(recs) == 1 and recs[-1].status != "running"
+
+    daemon._dispatch_due(datetime(2026, 8, 8, 10, 5, tzinfo=UTC))
+    wait_until(lambda: runner.started == {"a", "b"})
+    runner.release.set()
+    wait_until(lambda: finalized("a"))
+    wait_until(lambda: finalized("b"))
+
+
+def test_cron_dispatch_overlaps_lingering_run(tmp_path):
+    """A running task is killed and restarted when its next tick is due."""
+    runner = OverlapRunner()
+    daemon, tasks_dir, _runner = build(tmp_path)
+    daemon.runner = runner
+    add_task(tasks_dir, "t", schedule="* * * * *")
+    daemon.refresh()
+
+    def both_finalized():
+        recs = daemon.store.list_records("t")
+        return len(recs) == 2 and all(r.status != "running" for r in recs)
+
+    daemon._dispatch_due(datetime(2026, 8, 8, 10, 5, tzinfo=UTC))
+    assert runner.first_started.wait(5)
+    daemon._dispatch_due(datetime(2026, 8, 8, 10, 6, tzinfo=UTC))
+    wait_until(both_finalized)
+    first = daemon.store.load_record("t", 1)
+    second = daemon.store.load_record("t", 2)
+    assert first.status == "failure"
+    assert first.return_code == 137
+    assert second.status == "success"
+    assert second.previous_killed is True
 
 
 def test_wait_until_next_due_returns_when_clock_reaches_due(tmp_path, monkeypatch):
@@ -213,7 +314,7 @@ def test_scheduler_loop_dispatches_due_task(tmp_path, monkeypatch):
 
     daemon._stop = FakeStop()
     daemon._loop()
-    assert runner.calls == ["t"]
+    wait_until(lambda: runner.calls == ["t"])
 
 
 def test_recover_marks_stale_running_records(tmp_path):

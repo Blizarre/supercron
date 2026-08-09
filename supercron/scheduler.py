@@ -105,7 +105,7 @@ class Daemon:
         completes asynchronously, so callers should poll for status.
         """
         task = self._task_or_raise(name)
-        Thread(target=self.run_task, args=(task, "manual"), daemon=True).start()
+        self._spawn_run(task, "manual")
 
     def reset_task(self, name: str) -> None:
         """Destroy and recreate the persistent container for ``name``.
@@ -121,6 +121,25 @@ class Daemon:
         if task is None:
             raise TaskNotFound(f"no task named {name!r}")
         return task
+
+    def _spawn_run(self, task: Task, trigger: str) -> None:
+        """Run ``task`` on a background thread so ticks never block each other.
+
+        Cron and manual dispatches share this path: every execution runs
+        concurrently, and a still-running task is overlap-killed by its next
+        dispatch (see :meth:`run_task`). Failures before :meth:`run_task`
+        reaches its own error handling are routed to the error handler.
+        """
+
+        def target() -> None:
+            try:
+                self.run_task(task, trigger)
+            except Exception as exc:
+                log.exception("task %s: %s run thread failed", task.name, trigger)
+                if self._error_handler:
+                    self._error_handler(exc)
+
+        Thread(target=target, daemon=True).start()
 
     def set_error_handler(self, handler: Callable[[Exception], None]) -> None:
         self._error_handler = handler
@@ -293,4 +312,4 @@ class Daemon:
     def _dispatch_due(self, due: datetime) -> None:
         for st in self._scheduled:
             if st.schedule.matches(due):
-                self.run_task(st.task, trigger="cron")
+                self._spawn_run(st.task, trigger="cron")

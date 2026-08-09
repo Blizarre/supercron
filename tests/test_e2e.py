@@ -1,6 +1,7 @@
 """End-to-end tests wiring the daemon, results store, and web server together."""
 
 import json
+import time
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -97,6 +98,10 @@ def test_e2e_scheduled_and_manual_share_history(tmp_path):
     task = daemon.task_by_name("job")
     assert task is not None
     daemon._dispatch_due(datetime.now(UTC).replace(minute=5, second=0, microsecond=0))
+    for _ in range(500):
+        if len(daemon.store.list_records("job")) == 1:
+            break
+        time.sleep(0.01)
     daemon.run_task(task, trigger="manual")
     recs = daemon.store.list_records("job")
     assert [r.trigger for r in recs] == ["cron", "manual"]
