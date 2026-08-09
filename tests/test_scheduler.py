@@ -249,6 +249,21 @@ def test_recover_removes_orphan_containers(tmp_path):
     assert task.container_name in runner.containers
 
 
+def test_recover_does_not_prune_containers_before_tasks_discovered(tmp_path):
+    """Regression: recover() must not wipe containers if no tasks are known.
+
+    recover() runs at daemon startup; when it runs before tasks are
+    discovered the task list is empty, so orphan pruning would delete every
+    existing container and lose all persisted state across restarts.
+    """
+    daemon, tasks_dir, runner = build(tmp_path)
+    add_task(tasks_dir, "t")
+    assert daemon.tasks() == []  # not refreshed yet
+    runner.containers = {"supercron-t", "supercron-stale"}
+    daemon.recover()
+    assert runner.containers == {"supercron-t", "supercron-stale"}
+
+
 def test_run_task_end_to_end_with_docker(tmp_path):
     from supercron.runner import DockerRunner
 

@@ -54,8 +54,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     daemon = Daemon(args.cron_dir, config=config)
+    daemon.refresh()  # discover tasks first so recovery knows what to keep
     daemon.recover()
-    daemon.refresh()
     daemon.start()
 
     server = Server(daemon, host=args.host, port=args.port)

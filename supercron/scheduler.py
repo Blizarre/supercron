@@ -224,6 +224,12 @@ class Daemon:
     def _prune_orphan_containers(self) -> None:
         """Remove ``supercron-*`` containers that no longer correspond to a task."""
         known = {task.container_name for task in self.tasks()}
+        if not known:
+            # No tasks discovered yet (e.g. recover ran before refresh):
+            # pruning now would delete every container, losing all persisted
+            # state. Skip until tasks are known.
+            log.info("skipping orphan container cleanup: no tasks known")
+            return
         for name in self.runner.list_containers():
             if name not in known:
                 self.runner.remove_container(name)
