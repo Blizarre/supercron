@@ -9,9 +9,7 @@ the source of truth for success/failure.
 from __future__ import annotations
 
 import subprocess
-import threading
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -134,8 +132,9 @@ class DockerRunner:
         """Start the persistent container and wait for it to exit.
 
         Any still-running container from a previous execution is killed first
-        (overlap policy). Output is streamed into ``log_path``. Returns an
-        ExecutionResult; on timeout the container is stopped and a
+        (overlap policy). The run's merged output is captured into
+        ``log_path`` once the container has exited (see :meth:`_capture_logs`).
+        Returns an ExecutionResult; on timeout the container is stopped and a
         timed_out result is returned.
         """
         started = time.monotonic()
@@ -148,8 +147,6 @@ class DockerRunner:
             self.ensure_container(task)
 
         self._ensure_cmd("start", task.container_name)
-
-        stream_proc, stop_stream = self._stream_logs(task, log_path, started_at_iso)
 
         timed_out = False
         deadline = timeout + started if timeout else None
@@ -164,13 +161,7 @@ class DockerRunner:
                     break
                 time.sleep(self.poll_interval)
         finally:
-            stop_stream()
-            if stream_proc.poll() is None:
-                stream_proc.terminate()
-            try:
-                stream_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                stream_proc.kill()
+            self._capture_logs(task, log_path, started_at_iso)
 
         _, exit_code = self._state(task)
         return ExecutionResult(
@@ -179,28 +170,16 @@ class DockerRunner:
             duration=time.monotonic() - started,
         )
 
-    def _stream_logs(
-        self, task: Task, log_path: Path, since: str
-    ) -> tuple[subprocess.Popen[Any], Callable[[], None]]:
-        """Stream fresh container logs into ``log_path`` until told to stop."""
+    def _capture_logs(self, task: Task, log_path: Path, since: str) -> None:
+        """Write this run's merged stdout+stderr into ``log_path``.
+
+        Runs ``docker logs --since`` (non-following) after the container has
+        exited, so the capture is deterministic and cannot race a live log
+        stream. The persistent container accumulates logs across runs, so
+        ``--since`` scopes the capture to this run.
+        """
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_file: Any = open(log_path, "w")  # noqa: SIM115 - kept open for Popen
-        proc: subprocess.Popen[Any] = subprocess.Popen(
-            ["docker", "logs", "--since", since, "-f", task.container_name],
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-        )
-
-        def _runner() -> None:
-            try:
-                proc.wait()
-            finally:
-                log_file.close()
-
-        thread = threading.Thread(target=_runner, daemon=True)
-        thread.start()
-
-        def stop_stream() -> None:
-            proc.terminate()
-
-        return proc, stop_stream
+        p = self._cmd("logs", "--since", since, task.container_name)
+        with log_path.open("w") as log_file:
+            log_file.write(p.stdout)
+            log_file.write(p.stderr)
