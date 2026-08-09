@@ -177,5 +177,6 @@ minutes from the actual test start instant**:
   -q` (used by `make check`) never collects the 10-minute e2e suite; add mypy
   relaxations for the e2e modules.
 - `make check` stays as-is: fast, no Docker.
-- ci.yml: a separate `e2e` job is deliberately **not** added yet (it would
-  extend every PR by ~10 min); to be introduced on demand.
+- ci.yml: a separate `e2e` job (ubuntu-latest, Docker built in) runs `make
+  e2e` on every push to `main` and every pull request; it extends CI by
+  ~10 minutes and has a `timeout-minutes: 20` fail-fast guard.
