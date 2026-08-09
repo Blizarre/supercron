@@ -30,9 +30,12 @@ def _stray_containers() -> set[str]:
 
 @pytest.fixture()
 def docker_env():
-    """Skip without Docker; fail on leftover containers; clean up afterwards."""
+    """Require a working Docker daemon; fail loudly if it is unavailable."""
     if not _docker_available():
-        pytest.skip("Docker daemon is not available")
+        raise RuntimeError(
+            "e2e suite requires a working Docker daemon, but the docker CLI "
+            "is missing or `docker info` failed"
+        )
     if _docker("image", "inspect", IMAGE).returncode != 0:
         pull = _docker("pull", IMAGE)
         assert pull.returncode == 0, f"docker pull {IMAGE} failed: {pull.stderr}"

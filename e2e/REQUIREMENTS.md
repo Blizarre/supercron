@@ -29,8 +29,10 @@ Non-goals (deferred deliberately):
   (covered by `tests/test_scheduler.py`).
 
 ## 3. Environment and prerequisites
-- Docker CLI must be available and usable. The test **skips with a clear
-  message** if `docker info` fails.
+- Docker CLI must be available and usable. If it is not (no `docker` binary or
+  `docker info` fails), the suite **fails loudly with a clear error** rather
+  than skipping; an e2e that silently does nothing is worse than one that
+  fails.
 - Image: `busybox:latest` (small). The test pre-pulls/verifies it and fails
   fast if the pull fails.
 - At setup, assert **no pre-existing `supercron-*` containers**; fail fast with
